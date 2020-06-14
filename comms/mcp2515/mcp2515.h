@@ -130,9 +130,9 @@ namespace MCP2515 {
       constexpr void write_buf_id(Frame<id_type> &frame, uint8_t* id_buf);
   };
 
-}
+} // Namespace MCP2515
 
-}
-}
+} // Namespace CAN
+} // Namespace DeviceDrivers
 
 #endif // DEVICEDRIVERS_COMMS_MCP2515_H

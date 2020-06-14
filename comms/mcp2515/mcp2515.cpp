@@ -78,7 +78,7 @@ namespace MCP2515 {
   /// @brief Blocking write frame to first available TX buf and send RTS
   /// @returns enum 
   template <enum IDType id_type>
-  enum TxError send_frame(Frame<id_type> out_frame)
+  enum TxError MCP2515::send_frame(Frame<id_type> out_frame)
   {
     std::array<uint8_t, 6> frame_buf; // 1 byte cmd, 4 bytes Id, 1 byte DLC
     uint8_t tx_mbox;
@@ -180,17 +180,17 @@ namespace MCP2515 {
       id_buf[0] = (frame.id & 0x000007F8) >> 3; // SID[10-3]
       id_buf[1] = (frame.id & 0x00000007) << 5; // SID[2-0]
     } else if (id_type == ExtendedID) {
-      frame_buf[0] = ((frame.id & 0x1FE00000) >> 22);             // EID[28-21]
-      frame_buf[1] = ((frame.id & 0x001C0000) >> 14) | (1 << 3) | // EID[20-18]
-                     (frame.id & 0x00030000);                     // EID[17-16]
-      frame_buf[2] = (frame.id & 0x0000FF00) >> 8;                // EID[15-8]
-      frame_buf[3] = (frame.id & 0x000000FF);                     // EID[7-0]
+      id_buf[0] = ((frame.id & 0x1FE00000) >> 22);             // EID[28-21]
+      id_buf[1] = ((frame.id & 0x001C0000) >> 14) | (1 << 3) | // EID[20-18]
+                  (frame.id & 0x00030000);                     // EID[17-16]
+      id_buf[2] = (frame.id & 0x0000FF00) >> 8;                // EID[15-8]
+      id_buf[3] = (frame.id & 0x000000FF);                     // EID[7-0]
     }
 
     // Encode RTR and DLC
-    frame_buf[4] = (out_frame.remote & (1 << 6)) | (out_frame.data_len & 0x0F);
+    id_buf[4] = (frame.remote & (1 << 6)) | (frame.data_len & 0x0F);
   }
-}
+} // Namespace MCP2515
 
-}
-}
+} // Namespace CAN
+} // Namespace DeviceDrivers
