@@ -34,6 +34,13 @@ namespace MCP2515 {
   constexpr uint8_t TXB1CTRL = 0x30;
   constexpr uint8_t TXB2CTRL = 0x30;
 
+  constexpr uint8_t CNF3 = 0x28;
+  constexpr uint8_t CNF2 = 0x29;
+  constexpr uint8_t CNF1 = 0x2A;
+
+  constexpr uint8_t CANSTAT = 0xE0;
+  constexpr uint8_t CANCTRL = 0xF0;
+
   enum SPICommands : uint8_t {
     RESET = 0xC0,
     READ = 0x03,
@@ -44,6 +51,14 @@ namespace MCP2515 {
     READ_STATUS = 0xA0,
     RX_STATUS = 0xB0,
     BIT_MODIFY = 0x05,
+  };
+
+  enum OperationalMode : uint8_t {
+    ConfigurationMode = 0,
+    NormalMode,
+    SleepMode,
+    ListenOnlyMode,
+    LoopBackMode,
   };
 
   // OR these with LOAD_TX_BUFFER instruction to select a TX buffer
@@ -85,13 +100,13 @@ namespace MCP2515 {
               std::function<void (uint8_t*, uint8_t)> spi_rx,
               std::function<void (uint8_t, uint8_t*, uint8_t*)> spi_transfer);
 
-      // Resets via SPI
       void reset();
+      void enter_mode(enum OperationalMode mode, bool verify);
+      void set_baudrate(uint8_t brp, uint8_t sync, uint8_t prop,
+                        uint8_t ps1, uint8_t ps2, uint8_t sjw);
 
-      // returns 0 if buffer is full
       template <enum IDType id_type>
       bool enque_frame(Frame<id_type> out_frame);
-      // Blocking call to enque_frame
       template <enum IDType id_type>
       enum TxError send_frame(Frame<id_type> out_frame);
 
@@ -125,6 +140,8 @@ namespace MCP2515 {
       void rts(uint8_t buf);
       uint8_t read_reg(uint8_t reg);
       void write_reg(uint8_t reg, uint8_t value);
+      void read(uint8_t start_addr, uint8_t len, uint8_t* buffer);
+      void write(uint8_t start_addr, uint8_t len, uint8_t* buffer);
 
       template <enum IDType id_type>
       constexpr void write_buf_id(Frame<id_type> &frame, uint8_t* id_buf);

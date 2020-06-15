@@ -16,6 +16,7 @@ Frame<id_type>::Frame(uint32_t id, bool remote, uint8_t* data, uint8_t data_len)
 }
 
 namespace MCP2515 {
+  /// @brief Initializes the class, and resets the device, entering configuration mode.
   MCP2515::MCP2515(std::function<void()> spi_assert, std::function<void()> spi_deassert,
                    std::function<void (uint8_t*, uint8_t)> spi_tx,
                    std::function<void (uint8_t*, uint8_t)> spi_rx,
@@ -27,15 +28,43 @@ namespace MCP2515 {
     spi_transfer(spi_transfer)
   {
     reset();
-
   }
 
+  /// @brief Resets the device, entering configuration mode
   void MCP2515::reset()
   {
     uint8_t ins = RESET;
     spi_assert();
     spi_tx(&ins, 1);
     spi_deassert();
+  }
+
+  /// @brief Sends a request for the device to enter an operational mode
+  void MCP2515::enter_mode(enum OperationalMode mode, bool verify = false)
+  {
+    uint8_t canctrl = read_reg(CANCTRL);
+    canctrl = (canctrl & ~0x07) | mode;
+    write_reg(CANCTRL, canctrl);
+
+    // Hold until mode is verified, if requested
+    if (verify)
+      while ((read_reg(CANSTAT) & ~0x07) != mode);
+  }
+
+  /// @brief Sets the required parameters to set a baud rate with the given clock frequency
+  /// Refer to the datasheet, section 5.0 for how to set these constants.
+  /// It's fairly application-dependant and I'm too lazy to come up with a
+  /// clean formula for setting baudrate.
+  void MCP2515::set_baudrate(uint8_t brp, uint8_t sync, uint8_t prop,
+                             uint8_t ps1, uint8_t ps2, uint8_t sjw)
+  {
+    uint8_t CNF[3];
+    // for some reason CNF1 - CNF3 is reversed...
+    // TODO make WAKFIL it's own thing
+    CNF[2] = sjw << 6 | brp;
+    CNF[1] = ps1 << 3 | prop;
+    CNF[0] = (1 << 6) | ps2;
+    write(CNF3, 3);
   }
 
   /// @brief Write frame to first available TX buf and send RTS
@@ -170,6 +199,26 @@ namespace MCP2515 {
 
     spi_assert();
     spi_tx(buf, 2);
+    spi_deassert();
+  }
+
+  /// @brief Reads a continuous chunk.
+  void MCP2515::read(uint8_t start_addr, uint8_t len, uint8_t* buffer)
+  {
+    uint8_t buf_[2] = {READ, start_addr};
+    spi_assert();
+    spi_tx(buf_, 2);
+    spi_rx(buffer, len);
+    spi_deassert();
+  }
+
+  /// @brief Writes a continuous chunk.
+  void MCP2515::write(uint8_t start_addr, uint8_t len, uint8_t* buffer)
+  {
+    uint8_t buf_[2] = {WRITE, start_addr};
+    spi_assert();
+    spi_tx(buf_, 2);
+    spi_tx(buffer, len);
     spi_deassert();
   }
 
