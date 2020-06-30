@@ -38,6 +38,7 @@ namespace MCP2515 {
   constexpr uint8_t CNF2 = 0x29;
   constexpr uint8_t CNF1 = 0x2A;
 
+  constexpr uint8_t CANINTF = 0x2C;
   constexpr uint8_t CANSTAT = 0xE0;
   constexpr uint8_t CANCTRL = 0xF0;
 
@@ -61,6 +62,12 @@ namespace MCP2515 {
     LoopBackMode,
   };
 
+  // OR these with READ_RX_BUFFER to select an RX buffer
+  constexpr uint8_t RX_BUF_RXB0SIDH = 0x00;
+  constexpr uint8_t RX_BUF_RXB0DO = 0x02;
+  constexpr uint8_t RX_BUF_RXB1SIDH = 0x04;
+  constexpr uint8_t RX_BUF_RXB1DO = 0x06;
+
   // OR these with LOAD_TX_BUFFER instruction to select a TX buffer
   constexpr uint8_t TX_BUF_TXB0SIDH = 0b000;
   constexpr uint8_t TX_BUF_TXB0D0 = 0b001;
@@ -78,7 +85,7 @@ namespace MCP2515 {
   };
 
   enum RxBuffer {
-    RXB0,
+    RXB0 = 0,
     RXB1
   };
 
@@ -113,15 +120,13 @@ namespace MCP2515 {
       template <enum IDType id_type>
       std::optional<Frame<id_type>> receive_frame();
       template <enum IDType id_type>
-      std::optional<Frame<id_type>> receive_frame(RxBuffer);
+      std::optional<Frame<id_type>> receive_frame(RxBuffer buffer);
 
       void configure_interrupts();
       // Reads status registers to determine interrupts and acknowledges it.
       void decode_interrupt();
 
-      template <enum RxBuffer buf>
       void configure_mask(uint32_t mask);
-      template <enum RxBuffer buf>
       void configure_filter(uint32_t filter);
 
     private:
@@ -137,6 +142,7 @@ namespace MCP2515 {
       constexpr uint8_t rx_start_at_data(bool m) { return m & (1 << 2); }
 
       uint8_t read_status();
+      uint8_t rx_status();
       void rts(uint8_t buf);
       uint8_t read_reg(uint8_t reg);
       void write_reg(uint8_t reg, uint8_t value);

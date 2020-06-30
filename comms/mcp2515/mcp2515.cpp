@@ -15,6 +15,7 @@ Frame<id_type>::Frame(uint32_t id, bool remote, uint8_t* data, uint8_t data_len)
     this->data[i] = data[i];
 }
 
+// TODO implement filtering
 namespace MCP2515 {
   /// @brief Initializes the class, and resets the device, entering configuration mode.
   MCP2515::MCP2515(std::function<void()> spi_assert, std::function<void()> spi_deassert,
@@ -55,7 +56,7 @@ namespace MCP2515 {
   /// Refer to the datasheet, section 5.0 for how to set these constants.
   /// It's fairly application-dependant and I'm too lazy to come up with a
   /// clean formula for setting baudrate.
-  void MCP2515::set_baudrate(uint8_t brp, uint8_t sync, uint8_t prop,
+  void MCP2515::set_baudrate(uint8_t brp, uint8_t /*sync*/, uint8_t prop,
                              uint8_t ps1, uint8_t ps2, uint8_t sjw)
   {
     uint8_t CNF[3];
@@ -64,7 +65,7 @@ namespace MCP2515 {
     CNF[2] = sjw << 6 | brp;
     CNF[1] = ps1 << 3 | prop;
     CNF[0] = (1 << 6) | ps2;
-    write(CNF3, 3);
+    write(CNF3, 3, CNF);
   }
 
   /// @brief Write frame to first available TX buf and send RTS
@@ -151,6 +152,93 @@ namespace MCP2515 {
     return TX_ERR_OK;
   }
 
+  template <enum IDType id_type>
+  std::optional<Frame<id_type>> MCP2515::receive_frame()
+  {
+    // Determine which buffer has a frame
+    uint8_t status = read_status();
+
+    // Pulls from RXB0 first
+    if (status & RX0IF) {
+      receive_frame<id_type>(RX0IF);
+    } else if (status & RX0IF) {
+      receive_frame<id_type>(RX1IF);
+    }
+  }
+
+  template <enum IDType id_type>
+  std::optional<Frame<id_type>> MCP2515::receive_frame(RxBuffer buffer)
+  {
+    std::array<uint8_t, 5> frame_ctrl_buf; // Frame "control" data registers
+    std::array<uint8_t, 8> frame_data_buf; // Data bytes
+    uint8_t status;
+    uint32_t id;
+    uint8_t cmd;
+    uint8_t dlc;
+    bool remote;
+    
+    status = rx_status();
+
+    // Check if message was received in appropriate buffer
+    if (!(status & (1 << (6 + buffer))))
+      return std::nullopt;
+
+    // Avoid reading from buffer if not of the appropriate frame type
+    // We can check the ID type iff message not in both buffers xor we are using buf 0
+    if (!((status & 0x18) >> 3 == 3) && buffer == RXB1) {
+      if (id_type == StandardID) {
+        if (status & (1 << 4))
+          return std::nullopt;
+      } else if (id_type == ExtendedID) {
+        if (status ^ (1 << 4))
+          return std::nullopt;
+      }
+    }
+
+    // Read SPI buffer
+    cmd = READ_RX_BUFFER | (buffer ? RX_BUF_RXB1DO : 0);
+    spi_assert();
+    spi_tx(&cmd, 1);
+    spi_rx(frame_ctrl_buf.data(), frame_ctrl_buf.size()); // read "control" data registers
+    dlc = frame_ctrl_buf[4] & 0x0F;
+    if (dlc)
+      spi_rx(frame_data_buf.data(), dlc);
+    spi_deassert();
+
+    // Error handling, don't decode frame if we don't have the right ID type
+    if (id_type == StandardID) {
+      if (frame_ctrl_buf[1] & (1 << 3))
+        return std::nullopt;
+    } else if (id_type == ExtendedID) {
+      if (frame_ctrl_buf[1] ^ (1 << 3))
+        return std::nullopt;
+    }
+
+    // Compose into Frame type
+    if (id_type == StandardID) {
+      id = frame_ctrl_buf[0] << 3;  // SID[10-3]
+      id |= frame_ctrl_buf[1] >> 5; // SID[2-0]
+    } else if (id_type == ExtendedID) {
+      id = frame_ctrl_buf[0] << 21;           // EID[28-21]
+      id |= (frame_ctrl_buf[1] & 0xE0) << 18; // EID[20-18]
+      id |= (frame_ctrl_buf[1] & 0x03) << 16; // EID[17-16]
+      id |= frame_ctrl_buf[2] << 8;           // EID[15-8]
+      id |= frame_ctrl_buf[3];                // EID[7-0]
+    }
+
+    // TODO maybe remote frames don't work, I don't use them so idk and idc
+    remote = (id_type == StandardID) ? frame_ctrl_buf[1] & (1 << 4) : false;
+    Frame<id_type> frame(id, remote, frame_data_buf.data, dlc);
+
+    // Clear RXnIF flag
+    status = read_reg(CANINTF);
+    status ^= (1 << buffer);
+    write_reg(CANINTF, status);
+
+    return std::optional<Frame<id_type>>(frame);
+  }
+
+
   /// @brief Sends a READ_STATUS command
   /// @returns Bit-field using ReadStatusFlags (see fig. 12-8 of datasheet)
   uint8_t MCP2515::read_status()
@@ -160,6 +248,22 @@ namespace MCP2515 {
     spi_assert();
     // Send READ_STATUS command
     buf = READ_STATUS;
+    spi_tx(&buf, 1);
+    spi_rx(&buf, 1);
+    spi_deassert();
+
+    return buf;
+  }
+
+  /// @brief Sends an RX_STATUS command
+  /// @returns Bit-field of receive status (see fig. 12-9 of datasheet)
+  uint8_t MCP2515::rx_status()
+  {
+    uint8_t buf;
+
+    spi_assert();
+    // Send RX_STATUS command
+    buf = RX_STATUS;
     spi_tx(&buf, 1);
     spi_rx(&buf, 1);
     spi_deassert();
@@ -192,7 +296,6 @@ namespace MCP2515 {
   }
 
   /// @brief Writes a given value to a register
-  /// @returns Nothing
   void MCP2515::write_reg(uint8_t reg, uint8_t value)
   {
     uint8_t buf[2] = {reg, value};
